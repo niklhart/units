@@ -66,10 +66,12 @@
 #' with \code{for} no longer expose scalar units objects.
 #' Numeric replacements and concatenated numbers receive dimensionless units.
 #' Replacements must be numeric, \code{units}, or \code{mixed_units} values;
-#' \code{[[<-} and \code{$<-} require scalars. Assigning \code{NULL} deletes
-#' elements. Invalid inputs raise an error rather than changing representation.
-#' Resizing preserves the class and fills new elements with missing values and
-#' unknown units. Arithmetic involving an unknown unit returns a missing value
+#' \code{[[<-} requires a scalar. Assigning \code{NULL} deletes elements.
+#' Invalid inputs raise an error rather than changing representation.
+#' \code{$} and \code{$<-} are unsupported; use named indexing with \code{[[}
+#' or \code{[}. The \code{is.na}, \code{lengths} and \code{as.vector}
+#' functions use the standard numeric behavior.
+#' Arithmetic involving an unknown unit returns a missing value
 #' with an unknown unit; a missing value with a known unit retains its unit.
 #' All mixed results use numeric storage, integer IDs and a unit dictionary.
 #' @examples
@@ -426,33 +428,11 @@ mean.mixed_units <- function(x, ...) {
   NA_real_
 }
 #' @export
-median.mixed_units <- function(x, ...) stats::median.default(x, ...)
-#' @export
 xtfrm.mixed_units <- function(x) {
   known <- !is.na(x)
   if (sum(known) > 1L) stop("ordering is not supported for mixed_units", call. = FALSE)
   out <- rep(NA_real_, length(x))
   out[known] <- 1
-  out
-}
-#' @export
-is.na.mixed_units <- function(x) {
-  # Preserve the distinction between a known-unit NA and a NULL-like element.
-  out <- is.na(.mixed_values(x)) & !is.na(attr(x, "unit_id"))
-  names(out) <- names(x)
-  out
-}
-#' @export
-as.vector.mixed_units <- function(x, mode = "any") {
-  if (mode %in% c("any", "list")) return(x)
-  if (mode == "character") return(as.character(x))
-  as.vector(as.numeric(x), mode)
-}
-#' @method lengths mixed_units
-#' @export
-lengths.mixed_units <- function(x, use.names = TRUE) {
-  out <- as.integer(!is.na(attr(x, "unit_id")))
-  if (use.names) names(out) <- names(x)
   out
 }
 #' @method all.equal mixed_units
@@ -477,18 +457,6 @@ all.equal.mixed_units <- function(target, current, ...) {
 }
 
 #' @export
-`length<-.mixed_units` <- function(x, value) {
-  values <- .mixed_values(x)
-  names(values) <- names(x)
-  id <- attr(x, "unit_id")
-  length(values) <- value
-  length(id) <- value
-  .new_mixed(values, id, attr(x, "unit_dictionary"), names(values))
-}
-#' @export
-`$.mixed_units` <- function(x, name) x[[pmatch(name, names(x))]]
-#' @export
 `$<-.mixed_units` <- function(x, name, value) {
-  x[[name]] <- value
-  x
+  stop("$<- is not supported for mixed_units; use [[<- or [<-", call. = FALSE)
 }

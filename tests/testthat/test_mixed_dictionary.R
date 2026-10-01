@@ -142,13 +142,10 @@ test_that("numeric storage does not silently enable dimension-blind generics", {
   expect_error(sum(x))
   expect_error(sqrt(x))
   expect_warning(expect_true(is.na(mean(x))))
-  expect_identical(as.vector(x), x)
+  expect_identical(as.vector(x), c(1, NA_real_))
   expect_identical(as.vector(x, "double"), c(1, NA_real_))
-  y <- x
-  length(y) <- 3
-  expect_mixed(y, c(1, NA, NA), c("m", "s", "NULL"))
-  expect_identical(is.na(x[c(1, 2, NA)]), is.na(as.list(x[c(1, 2, NA)])))
-  expect_identical(lengths(x[c(1, NA)]), c(1L, 0L))
+  expect_identical(is.na(x[c(1, 2, NA)]), c(FALSE, TRUE, TRUE))
+  expect_identical(lengths(x[c(1, NA)]), c(1L, 1L))
   expect_true(isTRUE(all.equal(x, x[c(2, 1)][c(2, 1)])))
 })
 
@@ -216,7 +213,7 @@ test_that("all construction paths require valid numeric dictionary storage", {
   expect_warning(expect_valid_mixed(mixed_units(1:3, c("m", "s"))), "multiple")
 })
 
-test_that("replacement, concatenation and resizing never switch to lists", {
+test_that("replacement and concatenation never switch to lists", {
   original <- mixed_units(c(a = 1, b = 2), c("m", "s"))
   for (value in list("text", list(3), factor("m"), TRUE)) {
     x <- original
@@ -233,16 +230,14 @@ test_that("replacement, concatenation and resizing never switch to lists", {
   expect_identical(x[[1]], set_units(3, kg))
   x[2] <- 4
   expect_mixed(x, c(3, 4), c("kg", "1"))
-  x$a <- 5
+  x[["a"]] <- 5
   expect_mixed(x, c(5, 4), c("1", "1"))
   expect_mixed(c(original, 3, set_units(4, kg), NULL), 1:4, c("m", "s", "1", "kg"))
-  length(x) <- 4
-  expect_mixed(x, c(5, 4, NA, NA), c("1", "1", "NULL", "NULL"))
   x[[4]] <- original[2]
   expect_mixed(x, c(5, 4, NA, 2), c("1", "1", "NULL", "s"))
   x[c("a", "b")] <- NULL
   expect_mixed(x, c(NA, 2), c("NULL", "s"))
-  length(x) <- 0
+  x <- x[integer()]
   expect_mixed(x, numeric(), character())
   expect_length(attr(x, "unit_dictionary"), 0)
   corrupt <- structure(list(set_units(1, m)), class = "mixed_units")
@@ -278,9 +273,9 @@ test_that("core operations do not materialize scalar units lists", {
   }, .package = "units")
   expect_valid_mixed(x[c(3, 2, NA)])
   expect_identical(x[[1]], set_units(1, m))
-  expect_identical(x$a, set_units(1, m))
+  expect_identical(x[["a"]], set_units(1, m))
   x[[1]] <- 2
-  x$b <- set_units(3, kg)
+  x[["b"]] <- set_units(3, kg)
   x[2:3] <- y
   expect_valid_mixed(x)
   expect_valid_mixed(c(x, y))
@@ -324,4 +319,29 @@ test_that("scalar ordering and missing median results retain valid storage", {
   expect_identical(duplicated(c(unknown, unknown), incomparables = list(set_units(NA_real_, s))),
     c(FALSE, TRUE))
   expect_error(as_units(unknown), "unknown units")
+})
+
+
+test_that("removed convenience methods use ordinary numeric defaults", {
+  x <- mixed_units(c(a = 1, b = NA_real_), c("m", "s"))[c(1, 2, NA)]
+  values <- units:::.mixed_values(x)
+  names(values) <- names(x)
+  expect_identical(is.na(x), is.na(values))
+  expect_identical(lengths(x), lengths(values))
+  expect_identical(as.vector(x), as.vector(values))
+  for (n in c(0L, 2L, 4L)) {
+    result <- x
+    length(result) <- n
+    expected <- values
+    length(expected) <- n
+    expect_identical(result, expected)
+  }
+  expect_error(x$a, "atomic vectors")
+  original <- x
+  for (value in list(3, set_units(3, m), NULL)) {
+    expect_error(x$a <- value, "not supported")
+    expect_identical(x, original)
+  }
+  for (generic in c("$", "median", "lengths", "as.vector", "is.na", "length<-"))
+    expect_null(getS3method(generic, "mixed_units", optional = TRUE))
 })

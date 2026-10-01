@@ -46,7 +46,7 @@ All **32** workload results agree after decoding values, unit labels and names
 outside timing. Unknown measurements are decoded as missing values with unknown
 units: main stores these as NULL or zero-length list elements, whereas the
 redesign uses missing values and IDs. The separate compatibility
-runner covers **69** constructor, conversion, arithmetic, extraction,
+runner covers **63** constructor, conversion, arithmetic, extraction,
 replacement, coercion and error cases. It normalizes storage and errors (error
 wording and warning text are not checked). Cases deliberately changed by the
 redesign are checked separately in the regression suite. Broader API tests live in
@@ -133,17 +133,19 @@ x[[1]] <- 3  # equivalent to x[[1]] <- set_units(3, 1)
 
 The object keeps dictionary storage, and `x[[1]]` returns an ordinary `units`
 scalar. The same dimensionless interpretation applies to numeric values in
-`[<-`, `$<-`, and `c()`. These deliberately change the old behavior, which left
-bare numbers inside the underlying list. Resizing with `length<-` also retains
-the mixed class and fills new positions with unknown-unit missing values.
-These corrections, like class-preserving `rep()`, are covered by regression tests
+`[<-` and `c()`. These deliberately change the old behavior, which left bare
+numbers inside the underlying list. These corrections, like class-preserving
+`rep()`, are covered by regression tests
 rather than required to match the baseline.
 
 Invalid scalar replacements, such as `x[[1]] <- "text"`, now raise an error.
 All mixed results have numeric storage, integer unit IDs and a unit dictionary;
 there is no list-backed representation. Replacement accepts numeric or
-unit-bearing values, with `[[<-` and `$<-` restricted to scalars. Assigning `NULL`
-deletes elements. Arithmetic with an unknown unit produces a missing value with
+unit-bearing values, with `[[<-` restricted to scalars. Assigning `NULL` deletes
+elements. `$` and `$<-` are unsupported; use `[[` or `[` with a name instead.
+`is.na()`, `lengths()` and `as.vector()` use the ordinary numeric defaults.
+There is no special resizing method: changing the length with `length<-` drops
+the unit metadata and class, as it does for ordinary `units` vectors. Arithmetic with an unknown unit produces a missing value with
 an unknown unit, while known-unit missing values retain their units.
 
 Validation ran the full test suite with `NOT_CRAN=true`, including plotting and

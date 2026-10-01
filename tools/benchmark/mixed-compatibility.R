@@ -1,5 +1,5 @@
 # Compare behavior retained from main. Dimensionless numeric assignment,
-# unknown-unit arithmetic and class-preserving resizing have separate regressions.
+# unknown-unit arithmetic and ordinary numeric defaults have separate regressions.
 args <- commandArgs(TRUE)
 .libPaths(c(args[1], .libPaths()))
 library(units)
@@ -26,9 +26,9 @@ cases <- alist(x, x[c(4,1,NA,9)], x[FALSE], x['absent'], x[[2]], x[['absent']],
 a <- mixed_units(c(a = 1), "m")
 b <- mixed_units(c(b = 2, c = 3), "m")
 cases <- c(cases, alist(a+b, a==b, 2*b, b*c(d=2), a*1:3, c(a,b),
-  b$b, b$c, {z<-b;z$d<-set_units(4,s);z},
-  units(b[c(1,NA)]), is.na(b[c(1,NA)]),
+
+  units(b[c(1,NA)]),
  {z<-b;z[NA]<-a;z}, {z<-b;z[4]<-a;z}, b[[1.5]], b[c(TRUE,FALSE,TRUE)],
- {z<-b;z[]<-a;z}, unname(b), as.vector(b), lengths(b[c(1,NA)])))
+ {z<-b;z[]<-a;z}, unname(b)))
 results <- lapply(cases,function(e) tryCatch(normalize(suppressWarnings(eval(e))),error=function(e) 'ERROR'))
 saveRDS(list(cases = cases, results = results), args[2])

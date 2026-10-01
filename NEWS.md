@@ -7,8 +7,10 @@
   dictionary remapping and missing buffers during reshaping. All mixed results
   use numeric storage; the list-backed fallback has been removed. Numeric
   replacement and concatenation create dimensionless elements, and invalid
-  inputs raise an error. Resizing preserves the class; arithmetic with unknown
-  units propagates missing values and unknown IDs.
+  inputs raise an error. Arithmetic with unknown units propagates missing
+  values and unknown IDs. `$` access and `$<-` replacement are unsupported.
+  `is.na()`, `lengths()` and `as.vector()` use the numeric defaults; there is
+  no custom resizing method.
 
 * Document label parsing in `scale_{type}_units()`; #431
 

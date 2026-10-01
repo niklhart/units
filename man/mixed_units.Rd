@@ -31,10 +31,12 @@ the former list representation. Direct inspection of storage and iteration
 with \code{for} no longer expose scalar units objects.
 Numeric replacements and concatenated numbers receive dimensionless units.
 Replacements must be numeric, \code{units}, or \code{mixed_units} values;
-\code{[[<-} and \code{$<-} require scalars. Assigning \code{NULL} deletes
-elements. Invalid inputs raise an error rather than changing representation.
-Resizing preserves the class and fills new elements with missing values and
-unknown units. Arithmetic involving an unknown unit returns a missing value
+\code{[[<-} requires a scalar. Assigning \code{NULL} deletes elements.
+Invalid inputs raise an error rather than changing representation.
+\code{$} and \code{$<-} are unsupported; use named indexing with \code{[[}
+or \code{[}. The \code{is.na}, \code{lengths} and \code{as.vector}
+functions use the standard numeric behavior.
+Arithmetic involving an unknown unit returns a missing value
 with an unknown unit; a missing value with a known unit retains its unit.
 All mixed results use numeric storage, integer IDs and a unit dictionary.
 }

@@ -120,7 +120,6 @@ register_s3_method <- function(generic, class, fun=NULL) {
 # Mixed vectors carry integer codes through the proxy. Symbolic metadata lives
 # on the type prototype; factor levels align different dictionary orders.
 vec_proxy.mixed_units <- function(x, ...) {
-  if (is.list(x)) return(unclass(x))
   unit <- structure(attr(x, "unit_id"),
     levels = .mixed_keys(attr(x, "unit_dictionary")), class = "factor")
   value <- .mixed_values(x)
@@ -129,7 +128,6 @@ vec_proxy.mixed_units <- function(x, ...) {
 }
 vec_proxy_equal.mixed_units <- vec_proxy.mixed_units
 vec_restore.mixed_units <- function(x, to, ...) {
-  if (is.list(to)) return(.as.mixed_units(x))
   dictionary <- attr(to, "unit_dictionary")
   pos <- match(levels(x$unit), .mixed_keys(dictionary))
   stopifnot(!anyNA(pos))

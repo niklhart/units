@@ -1,4 +1,19 @@
+expect_valid_mixed <- function(x) {
+  expect_s3_class(x, "mixed_units")
+  expect_type(x, "double")
+  id <- attr(x, "unit_id")
+  dictionary <- attr(x, "unit_dictionary")
+  expect_type(id, "integer")
+  expect_length(id, length(x))
+  expect_type(dictionary, "list")
+  expect_true(all(vapply(dictionary, inherits, TRUE, "symbolic_units")))
+  expect_true(all(is.na(id) | (id >= 1L & id <= length(dictionary))))
+  expect_true(all(is.na(units:::.mixed_values(x)[is.na(id)])))
+  expect_identical(anyDuplicated(units:::.mixed_keys(dictionary)), 0L)
+}
+
 expect_mixed <- function(x, values, labels) {
+  expect_valid_mixed(x)
   expect_s3_class(x, "mixed_units")
   expect_type(x, "double")
   expect_equal(units:::.mixed_values(x), as.double(values))
@@ -131,7 +146,7 @@ test_that("numeric storage does not silently enable dimension-blind generics", {
   expect_identical(as.vector(x, "double"), c(1, NA_real_))
   y <- x
   length(y) <- 3
-  expect_identical(y, c(as.list(x), list(NULL)))
+  expect_mixed(y, c(1, NA, NA), c("m", "s", "NULL"))
   expect_identical(is.na(x[c(1, 2, NA)]), is.na(as.list(x[c(1, 2, NA)])))
   expect_identical(lengths(x[c(1, NA)]), c(1L, 0L))
   expect_true(isTRUE(all.equal(x, x[c(2, 1)][c(2, 1)])))
@@ -182,4 +197,131 @@ test_that("[[ replacement rejects invalid elements without changing the object",
   x <- original
   expect_error(x[["a"]] <- "text", "replacement must be")
   expect_identical(x, original)
+})
+
+test_that("all construction paths require valid numeric dictionary storage", {
+  u <- units(set_units(1, m))
+  new <- units:::.new_mixed
+  for (args in list(list(1, 1, list(u)), list(1:2, 1L, list(u)),
+                   list(1, 0L, list(u)), list(1, 2L, list(u)),
+                   list(1, NA_integer_, list(u)), list(1, 1L, list("m")),
+                   list(1, 1L, list(u, u)), list(list(1), 1L, list(u))))
+    expect_error(do.call(new, args), "invalid mixed_units representation")
+  expect_error(units:::.as.mixed_units(list("text")), "units scalars")
+  expect_error(units:::.as.mixed_units(list(numeric())), "units scalars")
+  expect_valid_mixed(units:::.as.mixed_units(list(set_units(c(inner = 1), m), NULL)))
+  expect_valid_mixed(set_units(2:3, m) ^ c(1, 2))
+  expect_valid_mixed(mixed_units(set_units(c(a = 1, b = NA), m)))
+  expect_valid_mixed(mixed_units(numeric(), character()))
+  expect_warning(expect_valid_mixed(mixed_units(1:3, c("m", "s"))), "multiple")
+})
+
+test_that("replacement, concatenation and resizing never switch to lists", {
+  original <- mixed_units(c(a = 1, b = 2), c("m", "s"))
+  for (value in list("text", list(3), factor("m"), TRUE)) {
+    x <- original
+    expect_error(x[1] <- value)
+    expect_identical(x, original)
+    expect_error(x$a <- value)
+    expect_identical(x, original)
+    expect_error(c(x, value))
+  }
+  x <- original
+  x[[1]] <- set_units(c(inner = 3), kg)
+  expect_valid_mixed(x)
+  expect_identical(names(x), names(original))
+  expect_identical(x[[1]], set_units(3, kg))
+  x[2] <- 4
+  expect_mixed(x, c(3, 4), c("kg", "1"))
+  x$a <- 5
+  expect_mixed(x, c(5, 4), c("1", "1"))
+  expect_mixed(c(original, 3, set_units(4, kg), NULL), 1:4, c("m", "s", "1", "kg"))
+  length(x) <- 4
+  expect_mixed(x, c(5, 4, NA, NA), c("1", "1", "NULL", "NULL"))
+  x[[4]] <- original[2]
+  expect_mixed(x, c(5, 4, NA, 2), c("1", "1", "NULL", "s"))
+  x[c("a", "b")] <- NULL
+  expect_mixed(x, c(NA, 2), c("NULL", "s"))
+  length(x) <- 0
+  expect_mixed(x, numeric(), character())
+  expect_length(attr(x, "unit_dictionary"), 0)
+  corrupt <- structure(list(set_units(1, m)), class = "mixed_units")
+  expect_error(c(original, corrupt), "invalid mixed_units representation")
+})
+
+test_that("unknown-unit arithmetic stays numeric and distinguishes known-unit NA", {
+  x <- mixed_units(c(a = 1, b = NA), c("m", "s"))[c(1, 2, NA)]
+  for (op in c("*", "/", "+", "-")) {
+    y <- do.call(op, list(x, x))
+    expect_valid_mixed(y)
+    expect_true(is.na(attr(y, "unit_id")[3]))
+    expect_false(is.na(attr(y, "unit_id")[2]))
+    expect_true(is.na(units:::.mixed_values(y)[3]))
+  }
+  expect_mixed(x * 2, c(2, NA, NA), c("m", "s", "NULL"))
+  expect_identical(unname(x == x), c(TRUE, NA, NA))
+  expect_valid_mixed(x[3] * x)
+  expect_valid_mixed(x[FALSE] * x)
+  expect_valid_mixed(c(x, x[3]))
+  y <- x
+  y[1] <- x[3]
+  expect_valid_mixed(y)
+  expect_null(y[[1]])
+  expect_error(x + 1, "both operands")
+})
+
+test_that("core operations do not materialize scalar units lists", {
+  x <- mixed_units(c(a = 1, b = 2, c = 1), c("m", "s", "m"))
+  y <- mixed_units(c(3, 4), c("kg", "m"))
+  testthat::local_mocked_bindings(as.list.mixed_units = function(...) {
+    stop("unexpected scalar-list materialization")
+  }, .package = "units")
+  expect_valid_mixed(x[c(3, 2, NA)])
+  expect_identical(x[[1]], set_units(1, m))
+  expect_identical(x$a, set_units(1, m))
+  x[[1]] <- 2
+  x$b <- set_units(3, kg)
+  x[2:3] <- y
+  expect_valid_mixed(x)
+  expect_valid_mixed(c(x, y))
+  expect_valid_mixed(x * 2)
+  expect_valid_mixed(x[c(1, NA)] * 2)
+  expect_equal(unname(drop_units(x)), c(2, 3, 4))
+  expect_equal(as.numeric(x), c(2, 3, 4))
+  expect_identical(unname(is.na(x)), rep(FALSE, 3))
+  expect_identical(unname(lengths(x)), rep(1L, 3))
+  expect_identical(as.character(x), c("2", "3", "4"))
+  expect_identical(duplicated(c(x, x)), rep(c(FALSE, TRUE), each = 3))
+  expect_identical(anyDuplicated(c(x, x)), 4L)
+  expect_valid_mixed(unique(c(x, x)))
+  homogeneous <- mixed_units(c(1, 200), c("m", "cm"))
+  expect_equal(as_units(homogeneous), set_units(c(1, 2), m))
+  expect_true(isTRUE(all.equal(homogeneous, mixed_units(c(100, 2), c("cm", "m")))))
+  expect_valid_mixed(set_units(homogeneous, "cm"))
+  expect_error(sqrt(x), "not supported")
+  expect_error(sum(x), "not supported")
+})
+
+test_that("duplicate detection respects unit identity and unknown IDs", {
+  x <- mixed_units(c(1, 100, NA, NaN, 1, NA, NaN), c("m", "cm", "m", "m", "m", "m", "m"))
+  expect_identical(duplicated(x), c(FALSE, FALSE, FALSE, FALSE, TRUE, TRUE, TRUE))
+  expect_identical(duplicated(x, fromLast = TRUE), c(TRUE, FALSE, TRUE, TRUE, FALSE, FALSE, FALSE))
+  expect_identical(anyDuplicated(x, fromLast = TRUE), 4L)
+  x <- x[c(1, 2, NA, NA)]
+  expect_identical(duplicated(x), c(FALSE, FALSE, FALSE, TRUE))
+  expect_identical(duplicated(c(x[1], x[1]), incomparables = list(set_units(1, m))), c(FALSE, FALSE))
+})
+
+test_that("scalar ordering and missing median results retain valid storage", {
+  x <- mixed_units(c(NA, 2), "m")
+  expect_valid_mixed(median(x))
+  expect_null(median(x)[[1]])
+  expect_mixed(median(x, na.rm = TRUE), 2, "m")
+  expect_identical(xtfrm(x), c(NA_real_, 1))
+  expect_error(median(mixed_units(1:2, "m")), "ordering")
+  expect_identical(duplicated(x, incomparables = NULL), duplicated(x))
+  unknown <- x[NA_integer_]
+  expect_identical(duplicated(c(unknown, unknown), incomparables = list(set_units(NA_real_, s))),
+    c(FALSE, TRUE))
+  expect_error(as_units(unknown), "unknown units")
 })

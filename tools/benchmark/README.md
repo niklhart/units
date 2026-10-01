@@ -8,33 +8,48 @@ these are exploratory medians, not performance guarantees.
 
 | Workload | Main, 8 types (ms) | Redesign, 8 types (ms) | Main, 2 types (ms) | Redesign, 2 types (ms) |
 | --- | ---: | ---: | ---: | ---: |
-| construct | 18.894 | 0.998 | 18.067 | 0.646 |
-| convert | 85.029 | 2.208 | 65.917 | 1.605 |
-| slice | 0.024 | 0.081 | 0.024 | 0.067 |
-| replace | 0.259 | 0.255 | 0.122 | 0.232 |
-| concatenate | 0.149 | 0.343 | 0.107 | 0.331 |
-| scale | 549.676 | 1.716 | 548.294 | 1.378 |
-| add | 656.038 | 1.789 | 604.639 | 1.368 |
-| multiply_pairs | 555.080 | 4.457 | 454.138 | 1.532 |
-| repetition | 0.104 | 0.290 | 0.098 | 0.245 |
+| construct | 19.351 | 1.150 | 20.211 | 0.642 |
+| convert | 87.352 | 2.643 | 85.288 | 1.650 |
+| slice | 0.024 | 0.140 | 0.023 | 0.105 |
+| replace | 0.113 | 0.426 | 0.202 | 0.324 |
+| concatenate | 0.112 | 0.675 | 0.122 | 0.631 |
+| scale | 598.723 | 2.076 | 546.508 | 1.557 |
+| add | 687.010 | 1.954 | 579.170 | 1.601 |
+| multiply_pairs | 474.229 | 4.775 | 465.529 | 1.712 |
+| repetition | 0.095 | 0.419 | 0.092 | 0.401 |
+| scalar_replace | 0.093 | 0.337 | 0.104 | 0.304 |
+| drop_units | 90.346 | 0.006 | 90.403 | 0.005 |
+| as_units | 430.476 | 0.231 | 483.761 | 0.209 |
+| duplicated | 1.030 | 0.469 | 0.937 | 0.473 |
+| unique | 0.984 | 0.721 | 1.005 | 0.630 |
+| known_missing_scale | 529.869 | 1.924 | 584.642 | 1.488 |
+| unknown_missing_scale | 527.154 | 1.941 | 542.449 | 1.547 |
 
 Retained size (lobstr, with explicit attribute roots to avoid undercounting IDs):
 8 types **1,764,864 → 124,808 bytes** (93% smaller); 2 types
-**1,762,256 → 122,152 bytes**. The redesign is slower for slicing, concatenation
-and repetition; two-type replacement is also slower. Main's repetition loses
+**1,762,256 → 122,152 bytes**. The redesign is slower for slicing, replacement,
+concatenation and repetition; validation and dictionary maintenance add work to
+these operations. Main's repetition loses
 its class, whereas the redesign preserves it.
 
 Raw CSVs include profiler-reported allocations. These are not retained size,
 peak memory, or complete allocation estimates: R undercounts small allocations,
 which strongly favors main's scalar-list arithmetic in those figures.
 `multiply_pairs` independently shuffles operand units: eight types yield up to
-64 observed pairs, versus four for two types.
+64 observed pairs, versus four for two types. The missing-value workloads replace
+one in every 100 elements with a known-unit NA or an unknown-unit missing value.
+Duplicate detection and `unique()` use two copies of the input. The `as_units()`
+workload uses alternating metres and centimetres so conversion to a common unit
+is possible.
 
-All **18** workload results have exactly identical decoded numeric values,
-canonical unit labels and names outside timing. The separate compatibility
-runner covers **74** constructor, conversion, arithmetic, extraction,
+All **32** workload results agree after decoding values, unit labels and names
+outside timing. Unknown measurements are decoded as missing values with unknown
+units: main stores these as NULL or zero-length list elements, whereas the
+redesign uses missing values and IDs. The separate compatibility
+runner covers **69** constructor, conversion, arithmetic, extraction,
 replacement, coercion and error cases. It normalizes storage and errors (error
-wording and warning text are not checked). Broader API regression tests live in
+wording and warning text are not checked). Cases deliberately changed by the
+redesign are checked separately in the regression suite. Broader API tests live in
 `tests/testthat/test_mixed_dictionary.R`.
 
 To reproduce the comparison, install the baseline and the current working tree
@@ -117,14 +132,19 @@ x[[1]] <- 3  # equivalent to x[[1]] <- set_units(3, 1)
 ```
 
 The object keeps dictionary storage, and `x[[1]]` returns an ordinary `units`
-scalar. This deliberately changes the old behavior, which left the bare number
-inside the underlying list. Like class-preserving `rep()`, this correction is
-covered by regression tests rather than required to match the baseline.
+scalar. The same dimensionless interpretation applies to numeric values in
+`[<-`, `$<-`, and `c()`. These deliberately change the old behavior, which left
+bare numbers inside the underlying list. Resizing with `length<-` also retains
+the mixed class and fills new positions with unknown-unit missing values.
+These corrections, like class-preserving `rep()`, are covered by regression tests
+rather than required to match the baseline.
 
 Invalid scalar replacements, such as `x[[1]] <- "text"`, now raise an error.
-`[[<-` accepts a bare numeric scalar (including missing values), a numeric
-`units` scalar, or `NULL` to delete an element. It no longer accepts arbitrary
-list contents that would leave an invalid `mixed_units` object.
+All mixed results have numeric storage, integer unit IDs and a unit dictionary;
+there is no list-backed representation. Replacement accepts numeric or
+unit-bearing values, with `[[<-` and `$<-` restricted to scalars. Assigning `NULL`
+deletes elements. Arithmetic with an unknown unit produces a missing value with
+an unknown unit, while known-unit missing values retain their units.
 
 Validation ran the full test suite with `NOT_CRAN=true`, including plotting and
 pillar snapshots. Package checks used `--no-manual --no-build-vignettes` and

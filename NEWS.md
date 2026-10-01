@@ -4,9 +4,11 @@
   dictionary of symbolic units. Conversion and arithmetic operate on groups
   through ordinary `units` methods. `as.list()` provides scalar units objects;
   `rep()` now preserves the mixed class. Optional vctrs integration supports
-  dictionary remapping and missing buffers during reshaping. Bare numeric
-  scalars assigned with `[[<-` now become dimensionless `units` elements;
-  invalid replacements, such as character strings, raise an error.
+  dictionary remapping and missing buffers during reshaping. All mixed results
+  use numeric storage; the list-backed fallback has been removed. Numeric
+  replacement and concatenation create dimensionless elements, and invalid
+  inputs raise an error. Resizing preserves the class; arithmetic with unknown
+  units propagates missing values and unknown IDs.
 
 * Document label parsing in `scale_{type}_units()`; #431
 

@@ -6,7 +6,23 @@
   attributes(x) <- NULL
   x
 }
+.validate_mixed_data <- function(x, id, dictionary) {
+  if (!is.numeric(x) || is.complex(x) || !is.null(dim(x)) ||
+      !is.integer(id) || length(id) != length(x) || !is.null(dim(id)) ||
+      !is.list(dictionary) ||
+      !all(vapply(dictionary, function(u) inherits(u, "symbolic_units") &&
+        is.character(u$numerator) && is.character(u$denominator), TRUE)) ||
+      any(!is.na(id) & (id < 1L | id > length(dictionary))) ||
+      any(!is.na(.mixed_values(x)[is.na(id)])) || anyDuplicated(.mixed_keys(dictionary)))
+    stop("invalid mixed_units representation", call. = FALSE)
+  invisible(NULL)
+}
+.validate_mixed <- function(x) {
+  .validate_mixed_data(x, attr(x, "unit_id"), attr(x, "unit_dictionary"))
+  x
+}
 .new_mixed <- function(x, id, dictionary, nm = NULL, compact = TRUE) {
+  .validate_mixed_data(x, id, dictionary)
   if (compact) {
     used <- sort(unique(id[!is.na(id)]))
     if (!length(id) || length(used)) {
@@ -23,11 +39,11 @@
   .new_mixed(x, match(keys, keys[keep])[id], dictionary[keep], nm)
 }
 .as.mixed_units <- function(x) {
-  stopifnot(is.list(unclass(x)))
+  stopifnot(is.list(x))
   valid <- vapply(x, function(a) is.null(a) ||
-    (inherits(a, "units") && length(a) == 1L && is.null(names(a))), TRUE)
-  # Preserve the historically permissive list assignment/concatenation API.
-  if (!all(valid)) return(structure(x, class = c("mixed_units", "list")))
+    (inherits(a, "units") && is.numeric(a) && !is.complex(a) &&
+     length(a) == 1L && is.null(dim(a))), TRUE)
+  if (!all(valid)) stop("expected a list of units scalars or NULL", call. = FALSE)
   dictionary <- lapply(x, function(a) if (!is.null(a)) units(a))
   known <- !vapply(x, is.null, TRUE)
   keys <- .mixed_keys(dictionary)
@@ -48,10 +64,14 @@
 #' a missing element with unknown units. Use \code{as.list()} to materialize
 #' the former list representation. Direct inspection of storage and iteration
 #' with \code{for} no longer expose scalar units objects.
-#' Assigning a bare numeric scalar with \code{[[<-} creates a dimensionless
-#' \code{units} element, equivalent to assigning \code{set_units(value, 1)}.
-#' Other replacements must be numeric \code{units} scalars, or \code{NULL}
-#' to delete an element; invalid replacements raise an error.
+#' Numeric replacements and concatenated numbers receive dimensionless units.
+#' Replacements must be numeric, \code{units}, or \code{mixed_units} values;
+#' \code{[[<-} and \code{$<-} require scalars. Assigning \code{NULL} deletes
+#' elements. Invalid inputs raise an error rather than changing representation.
+#' Resizing preserves the class and fills new elements with missing values and
+#' unknown units. Arithmetic involving an unknown unit returns a missing value
+#' with an unknown unit; a missing value with a known unit retains its unit.
+#' All mixed results use numeric storage, integer IDs and a unit dictionary.
 #' @examples
 #' a <- 1:4
 #' u <- c("m/s", "km/h", "mg/L", "g")
@@ -64,15 +84,17 @@ mixed_units <- function(x, values, ...) UseMethod("mixed_units")
 #' @export
 mixed_units.units <- function(x, values, ...) {
   stopifnot(missing(values))
-  mixed_units(unclass(x), rep(as.character(units(x)), length(x)))
+  .new_mixed(.mixed_values(x), rep.int(1L, length(x)), list(units(x)), names(x))
 }
 
 #' @export
 mixed_units.numeric <- function(x, values, ...) {
-  stopifnot(is.character(values), is.numeric(x))
-  if (!ud_recycles(x, values))
-    return(.as.mixed_units(mapply(set_units, x, values, mode = "standard", SIMPLIFY = FALSE)))
+  stopifnot(is.character(values), is.numeric(x), !is.complex(x))
+  if (!length(x) || !length(values))
+    return(.new_mixed(numeric(), integer(), list(), if (!is.null(names(x))) character()))
   n <- max(length(x), length(values))
+  if (n %% min(length(x), length(values)))
+    warning("longer argument not a multiple of length of shorter")
   nm <- names(x)
   x <- rep_len(.mixed_values(x), n)
   labels <- unique(values)
@@ -89,7 +111,6 @@ mixed_units.numeric <- function(x, values, ...) {
 
 #' @export
 as.list.mixed_units <- function(x, ...) {
-  if (is.list(x)) return(unclass(x))
   d <- attr(x, "unit_dictionary")
   id <- attr(x, "unit_id")
   value <- .mixed_values(x)
@@ -101,18 +122,22 @@ as.list.mixed_units <- function(x, ...) {
 
 #' @export
 as.double.mixed_units <- function(x, ...) {
-  if (is.list(x)) return(as.double(unclass(x)))
-  if (anyNA(attr(x, "unit_id"))) return(as.double(as.list(x)))
+  if (anyNA(attr(x, "unit_id")))
+    stop("cannot coerce elements with unknown units to numeric", call. = FALSE)
   .mixed_values(x)
 }
 
 #' @export
-as.character.mixed_units <- function(x, ...) as.character(as.list(x))
+as.character.mixed_units <- function(x, ...) {
+  out <- as.character(.mixed_values(x))
+  out[is.na(out)] <- "NA"
+  out[is.na(attr(x, "unit_id"))] <- "NULL"
+  out
+}
 
 #' @export
 `[[.mixed_units` <- function(x, i, ...) {
-  if (is.list(x)) return(unclass(x)[[i, ...]])
-  if (length(i) != 1L) return(as.list(x)[[i, ...]])
+  if (length(i) != 1L) stop("[[ requires a single index", call. = FALSE)
   if (is.na(i) || (is.character(i) && (i == "" || is.na(match(i, names(x)))))) return(NULL)
   id <- attr(x, "unit_id")
   names(id) <- names(x)
@@ -125,7 +150,6 @@ as.character.mixed_units <- function(x, ...) as.character(as.list(x))
 
 #' @export
 `[.mixed_units` <- function(x, i, ...) {
-  if (is.list(x)) return(.as.mixed_units(unclass(x)[i]))
   v <- .mixed_values(x)
   names(v) <- names(x)
   id <- attr(x, "unit_id")
@@ -134,15 +158,26 @@ as.character.mixed_units <- function(x, ...) as.character(as.list(x))
   .new_mixed(out, id[i], attr(x, "unit_dictionary"), names(out))
 }
 
+# Normalize unit-bearing operands and bare numbers at the public boundary.
+# All internal operations then use the same dictionary representation.
+.mixed_input <- function(x) {
+  if (inherits(x, "mixed_units")) return(.validate_mixed(x))
+  if (inherits(x, "units")) return(mixed_units(x))
+  if (!is.object(x) && is.null(dim(x)) && !is.complex(x) &&
+      (is.numeric(x) || (is.logical(x) && all(is.na(x)))))
+    return(.mixed_set_names(mixed_units(as.numeric(x), "1"), names(x)))
+  stop("expected numeric values, units, or mixed_units", call. = FALSE)
+}
+.mixed_set_names <- function(x, nm) { names(x) <- nm; x }
+
 #' @export
 `[<-.mixed_units` <- function(x, i, ..., value) {
-  if (inherits(value, "units")) value <- mixed_units(value)
-  if (is.list(x) || !inherits(value, "mixed_units") || is.list(value)) {
-    out <- as.list(x)
-    if (inherits(value, "mixed_units")) value <- as.list(value)
-    out[i] <- value
-    return(.as.mixed_units(out))
+  if (is.null(value)) {
+    positions <- seq_along(x)
+    names(positions) <- names(x)
+    return(x[!seq_along(x) %in% positions[i]])
   }
+  value <- .mixed_input(value)
   d <- c(attr(x, "unit_dictionary"), attr(value, "unit_dictionary"))
   v <- .mixed_values(x)
   names(v) <- names(x)
@@ -154,18 +189,26 @@ as.character.mixed_units <- function(x, ...) as.character(as.list(x))
 }
 
 #' @export
-`[[<-.mixed_units` <- function(x, ..., value) {
-  if (length(value) == 1L && !is.object(value) && is.null(dim(value)) &&
-      !is.complex(value) &&
-      (is.numeric(value) || (is.logical(value) && is.na(value))))
-    value <- set_units(value, "1", mode = "standard")
-  if (!is.null(value) &&
-      (!inherits(value, "units") || length(value) != 1L ||
-       !is.numeric(value) || is.complex(value) || !is.null(dim(value))))
+`[[<-.mixed_units` <- function(x, i, ..., value) {
+  if (length(i) != 1L || is.na(i)) stop("[[ requires a single nonmissing index", call. = FALSE)
+  if (is.null(value)) {
+    if (is.character(i) && !i %in% names(x)) return(x)
+    positions <- seq_along(x)
+    names(positions) <- names(x)
+    return(x[-positions[[i, ...]]])
+  }
+  if (length(value) != 1L || !is.null(dim(value)))
     stop("replacement must be a numeric scalar, a units scalar, or NULL", call. = FALSE)
-  out <- as.list(x)
-  out[[...]] <- value
-  .as.mixed_units(out)
+  value <- tryCatch(.mixed_input(value), error = function(e)
+    stop("replacement must be a numeric scalar, a units scalar, or NULL", call. = FALSE))
+  v <- .mixed_values(x)
+  names(v) <- names(x)
+  id <- attr(x, "unit_id")
+  names(id) <- names(x)
+  v[[i, ...]] <- .mixed_values(value)
+  id[[i, ...]] <- attr(value, "unit_id") + length(attr(x, "unit_dictionary"))
+  .mixed_assemble(v, id, c(attr(x, "unit_dictionary"),
+    attr(value, "unit_dictionary")), names(v))
 }
 
 #' @export
@@ -173,10 +216,8 @@ rep.mixed_units <- function(x, ...) x[rep(seq_along(x), ...)]
 
 #' @export
 c.mixed_units <- function(...) {
-  args <- list(...)
-  if (!all(vapply(args, function(x) inherits(x, "mixed_units") && !is.list(x), TRUE)))
-    return(.as.mixed_units(do.call(c, lapply(args, function(x)
-      if (inherits(x, "mixed_units")) as.list(x) else unclass(x)))))
+  args <- Filter(Negate(is.null), list(...))
+  args <- lapply(args, .mixed_input)
   offsets <- cumsum(c(0L, vapply(args, function(x) length(attr(x, "unit_dictionary")), 0L)))
   ids <- lapply(seq_along(args), function(i) attr(args[[i]], "unit_id") + offsets[i])
   vals <- lapply(args, function(x) { v <- .mixed_values(x); names(v) <- names(x); v })
@@ -197,15 +238,8 @@ set_units.mixed_units <- function(x, value, ..., mode = "standard") {
   values <- as.numeric(x) # also preserves the error for unknown units
   labels <- unique(value)
   target <- rep_len(match(value, labels), n)
-  if (is.list(x)) {
-    dictionary <- unclass(units(x))
-    keys <- .mixed_keys(dictionary)
-    source <- match(keys, unique(keys))
-    dictionary <- dictionary[!duplicated(keys)]
-  } else {
-    source <- attr(x, "unit_id")
-    dictionary <- attr(x, "unit_dictionary")
-  }
+  source <- attr(x, "unit_id")
+  dictionary <- attr(x, "unit_dictionary")
   groups <- split(seq_len(n), paste(source, target, sep = ":"))
   out <- numeric(n)
   id <- integer(n)
@@ -213,7 +247,7 @@ set_units.mixed_units <- function(x, value, ..., mode = "standard") {
   for (g in seq_along(groups)) {
     i <- groups[[g]]
     source_unit <- dictionary[[source[i[1L]]]]
-    ordinary <- if (is.null(source_unit)) values[i] else .as.units(values[i], source_unit)
+    ordinary <- .as.units(values[i], source_unit)
     converted <- set_units(ordinary, labels[target[i[1L]]], mode = "standard")
     out[i] <- as.numeric(converted)
     id[i] <- g
@@ -230,8 +264,7 @@ set_units.mixed_units <- function(x, value, ..., mode = "standard") {
 
 #' @export
 units.mixed_units <- function(x) {
-  if (is.list(x)) u <- lapply(unclass(x), function(a) if (inherits(a, "units")) units(a) else NULL)
-  else u <- attr(x, "unit_dictionary")[attr(x, "unit_id")]
+  u <- attr(x, "unit_dictionary")[attr(x, "unit_id")]
   names(u) <- names(x)
   structure(u, class = "mixed_symbolic_units")
 }
@@ -243,7 +276,19 @@ as.character.mixed_symbolic_units <- function(x, ...) {
 
 #' @export
 as_units.mixed_units <- function(x, ...) {
-  set_units(do.call(c, as.list(x)), value = units(x[[1]]), mode = "standard")
+  if (!length(x)) stop("cannot convert empty mixed_units to units", call. = FALSE)
+  if (anyNA(attr(x, "unit_id")))
+    stop("cannot convert elements with unknown units to units", call. = FALSE)
+  id <- attr(x, "unit_id")
+  dictionary <- attr(x, "unit_dictionary")
+  target <- dictionary[[id[1L]]]
+  values <- .mixed_values(x)
+  for (i in split(seq_along(x), id)) {
+    source <- .as.units(values[i], dictionary[[id[i[1L]]]])
+    values[i] <- as.numeric(set_units(source, target, mode = "standard"))
+  }
+  names(values) <- names(x)
+  .as.units(values, target)
 }
 
 #' @export
@@ -273,7 +318,12 @@ str.mixed_units <- function(object, ...) {
 
 #' @name drop_units
 #' @export
-drop_units.mixed_units <- function(x) sapply(as.list(x), drop_units)
+drop_units.mixed_units <- function(x) {
+  if (!length(x)) return(setNames(list(), character()))
+  out <- as.numeric(x)
+  names(out) <- names(x)
+  out
+}
 
 .Ops.mixed_units <- function(e1, e2, op) {
   if (!op %in% c("==", "!=", "*", "/", "+", "-"))
@@ -282,14 +332,14 @@ drop_units.mixed_units <- function(x) sapply(as.list(x), drop_units)
   if (inherits(e2, "units")) e2 <- mixed_units(e2)
   mixed1 <- inherits(e1, "mixed_units")
   mixed2 <- inherits(e2, "mixed_units")
-  # Irregular lists and unknown elements keep mapply's historical behavior.
-  irregular <- function(x) is.list(x) || (inherits(x, "mixed_units") && anyNA(attr(x, "unit_id")))
-  if (irregular(e1) || irregular(e2) || !length(e1) || !length(e2)) {
-    a <- if (mixed1) as.list(e1) else e1
-    b <- if (mixed2) as.list(e2) else e2
-    ret <- mapply(op, a, b, SIMPLIFY = op %in% c("==", "!="))
-    return(if (is.list(ret)) .as.mixed_units(ret) else ret)
-  }
+  plain <- function(x) !is.object(x) && is.null(dim(x)) &&
+    (is.numeric(x) || is.logical(x)) && !is.complex(x)
+  if ((!mixed1 && !plain(e1)) || (!mixed2 && !plain(e2)))
+    stop("operands must be numeric or mixed_units", call. = FALSE)
+  if (op %in% c("+", "-", "==", "!=") && (!mixed1 || !mixed2))
+    stop('both operands of the expression should be "units" objects', call. = FALSE)
+  if (!length(e1) || !length(e2))
+    return(.new_mixed(numeric(), integer(), list(), if (!is.null(names(e1))) character()))
   n <- max(length(e1), length(e2))
   if (n %% min(length(e1), length(e2))) warning("longer argument not a multiple of length of shorter")
   a <- rep_len(if (mixed1) .mixed_values(e1) else e1, n)
@@ -298,10 +348,11 @@ drop_units.mixed_units <- function(x) sapply(as.list(x), drop_units)
   ib <- if (mixed2) rep_len(attr(e2, "unit_id"), n) else rep.int(0L, n)
   da <- attr(e1, "unit_dictionary")
   db <- attr(e2, "unit_dictionary")
-  groups <- split(seq_len(n), paste(ia, ib, sep = ":"))
+  known <- which(!is.na(ia) & !is.na(ib))
+  groups <- split(known, paste(ia[known], ib[known], sep = ":"))
   comparison <- op %in% c("==", "!=")
-  out <- if (comparison) logical(n) else numeric(n)
-  id <- integer(n)
+  out <- if (comparison) rep(NA, n) else rep(NA_real_, n)
+  id <- rep(NA_integer_, n)
   dictionary <- vector("list", length(groups))
   for (g in seq_along(groups)) {
     i <- groups[[g]]
@@ -314,18 +365,37 @@ drop_units.mixed_units <- function(x) sapply(as.list(x), drop_units)
   }
   nm <- names(e1)
   if (comparison) { names(out) <- nm; return(out) }
-  order <- unique(id)
+  order <- unique(id[!is.na(id)])
   .mixed_assemble(out, match(id, order), dictionary[order], nm)
 }
 
 #' @export
 duplicated.mixed_units <- function(x, incomparables = FALSE, ...) {
-  duplicated(as.list(x), incomparables = incomparables, ...)
+  values <- .mixed_values(x)
+  id <- attr(x, "unit_id")
+  groups <- c(unname(split(seq_along(x), id)), list(which(is.na(id))))
+  out <- logical(length(x))
+  for (i in groups) out[i] <- duplicated(values[i], ...)
+  if (length(incomparables) && !identical(incomparables, FALSE)) {
+    excluded <- if (inherits(incomparables, "mixed_units")) incomparables else
+      .as.mixed_units(incomparables)
+    d <- .mixed_keys(attr(x, "unit_dictionary"))
+    other <- match(.mixed_keys(attr(excluded, "unit_dictionary")), d)[attr(excluded, "unit_id")]
+    for (i in seq_along(excluded)) {
+      if (is.na(other[i]) && !is.na(attr(excluded, "unit_id")[i])) next
+      same <- match(.mixed_values(x), .mixed_values(excluded)[i], nomatch = 0L) == 1L &
+        match(attr(x, "unit_id"), other[i], nomatch = 0L) == 1L
+      out[same] <- FALSE
+    }
+  }
+  out
 }
 
 #' @export
-anyDuplicated.mixed_units <- function(x, incomparables = FALSE, ...) {
-  anyDuplicated(as.list(x), incomparables = incomparables, ...)
+anyDuplicated.mixed_units <- function(x, incomparables = FALSE, fromLast = FALSE, ...) {
+  which_duplicate <- which(duplicated(x, incomparables = incomparables, fromLast = fromLast, ...))
+  if (!length(which_duplicate)) return(0L)
+  if (fromLast) which_duplicate[length(which_duplicate)] else which_duplicate[1L]
 }
 
 #' @export
@@ -342,47 +412,83 @@ as.data.frame.mixed_units <- as.data.frame.AsIs
 #' @export
 Ops.mixed_units <- Ops.units
 
-# Preserve list-era behavior for generics that otherwise silently compute on
-# the new numeric storage without checking dimensions.
+# Explicit behavior prevents numeric storage from enabling operations that
+# would discard dimensions without a unit compatibility check.
 #' @export
-Math.mixed_units <- function(x, ...) do.call(.Generic, c(list(as.list(x)), list(...)))
+Math.mixed_units <- function(x, ...) stop(paste("operation", .Generic, "not supported"), call. = FALSE)
 #' @export
 Summary.mixed_units <- function(..., na.rm = FALSE) {
-  args <- lapply(list(...), function(x) if (inherits(x, "mixed_units")) as.list(x) else x)
-  do.call(.Generic, c(args, list(na.rm = na.rm)))
+  stop(paste("operation", .Generic, "not supported"), call. = FALSE)
 }
 #' @export
-mean.mixed_units <- function(x, ...) mean(as.list(x), ...)
+mean.mixed_units <- function(x, ...) {
+  warning("argument is not numeric or logical: returning NA")
+  NA_real_
+}
 #' @export
-median.mixed_units <- function(x, ...) median(as.list(x), ...)
+median.mixed_units <- function(x, ...) stats::median.default(x, ...)
 #' @export
-xtfrm.mixed_units <- function(x) xtfrm(as.list(x))
+xtfrm.mixed_units <- function(x) {
+  known <- !is.na(x)
+  if (sum(known) > 1L) stop("ordering is not supported for mixed_units", call. = FALSE)
+  out <- rep(NA_real_, length(x))
+  out[known] <- 1
+  out
+}
 #' @export
-is.na.mixed_units <- function(x) is.na(as.list(x))
+is.na.mixed_units <- function(x) {
+  # Preserve the distinction between a known-unit NA and a NULL-like element.
+  out <- is.na(.mixed_values(x)) & !is.na(attr(x, "unit_id"))
+  names(out) <- names(x)
+  out
+}
 #' @export
 as.vector.mixed_units <- function(x, mode = "any") {
-  if (mode %in% c("any", "list")) x else as.vector(as.list(x), mode)
+  if (mode %in% c("any", "list")) return(x)
+  if (mode == "character") return(as.character(x))
+  as.vector(as.numeric(x), mode)
 }
 #' @method lengths mixed_units
 #' @export
-lengths.mixed_units <- function(x, use.names = TRUE) lengths(as.list(x), use.names)
+lengths.mixed_units <- function(x, use.names = TRUE) {
+  out <- as.integer(!is.na(attr(x, "unit_id")))
+  if (use.names) names(out) <- names(x)
+  out
+}
+#' @method all.equal mixed_units
 #' @export
 all.equal.mixed_units <- function(target, current, ...) {
   if (!inherits(current, "mixed_units")) return("current is not a mixed_units object")
-  all.equal(as.list(target), as.list(current), ...)
+  if (length(target) != length(current)) return("Lengths differ")
+  a <- attr(target, "unit_id")
+  b <- attr(current, "unit_id")
+  if (!identical(is.na(a), is.na(b))) return("Unknown units differ")
+  values <- .mixed_values(current)
+  known <- which(!is.na(a))
+  for (i in split(known, paste(a[known], b[known], sep = ":"))) {
+    source <- .as.units(values[i], attr(current, "unit_dictionary")[[b[i[1L]]]])
+    values[i] <- as.numeric(set_units(source,
+      attr(target, "unit_dictionary")[[a[i[1L]]]], mode = "standard"))
+  }
+  names(values) <- names(current)
+  expected <- .mixed_values(target)
+  names(expected) <- names(target)
+  all.equal(expected, values, ...)
 }
 
 #' @export
 `length<-.mixed_units` <- function(x, value) {
-  out <- as.list(x)
-  length(out) <- value
-  out
+  values <- .mixed_values(x)
+  names(values) <- names(x)
+  id <- attr(x, "unit_id")
+  length(values) <- value
+  length(id) <- value
+  .new_mixed(values, id, attr(x, "unit_dictionary"), names(values))
 }
 #' @export
-`$.mixed_units` <- function(x, name) as.list(x)[[name, exact = FALSE]]
+`$.mixed_units` <- function(x, name) x[[pmatch(name, names(x))]]
 #' @export
 `$<-.mixed_units` <- function(x, name, value) {
-  out <- as.list(x)
-  out[[name]] <- value
-  .as.mixed_units(out)
+  x[[name]] <- value
+  x
 }

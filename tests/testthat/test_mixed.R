@@ -101,7 +101,7 @@ test_that("mixed_units() matches units made one by one", {
                 list(5, c("m", "ft", "m")),
                 list(c(1, NA, 3), "kg"))
   for (a in cases)
-    expect_identical(unclass(mixed_units(a[[1]], a[[2]])),
+    expect_identical(as.list(mixed_units(a[[1]], a[[2]])),
                      mapply(set_units, a[[1]], a[[2]], mode = "standard", SIMPLIFY = FALSE))
 })
 

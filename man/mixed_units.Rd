@@ -3,7 +3,7 @@
 \name{mixed_units}
 \alias{mixed_units}
 \alias{units<-.mixed_units}
-\title{Create or convert to a mixed units list-column}
+\title{Create or convert to a mixed units vector}
 \usage{
 mixed_units(x, values, ...)
 
@@ -19,10 +19,16 @@ mixed_units(x, values, ...)
 \item{value}{see values}
 }
 \description{
-Create or convert to a mixed units list-column
+Create or convert to a mixed units vector
 }
 \details{
 if \code{x} is of class \code{units}, \code{values} should be missing or of class \code{mixed_symbolic_units}; if \code{x} is numeric, \code{values} should be a character vector the length of \code{x}.
+Numeric values are stored with integer unit IDs and a dictionary of symbolic
+units. Subsetting and repetition preserve the mixed class; scalar extraction
+with \code{[[} returns an ordinary \code{units} object, or \code{NULL} for
+a missing element with unknown units. Use \code{as.list()} to materialize
+the former list representation. Direct inspection of storage and iteration
+with \code{for} no longer expose scalar units objects.
 }
 \examples{
 a <- 1:4

@@ -42,6 +42,13 @@
 #' a %% a
 #' a %% set_units(2)
 Ops.units <- function(e1, e2) {
+  if (inherits(e1, "mixed_units") || (!missing(e2) && inherits(e2, "mixed_units"))) {
+    if (inherits(e1, "units") || (!missing(e2) && inherits(e2, "units"))) {
+      warning(sprintf('Incompatible methods ("Ops.mixed_units", "Ops.units") for "%s"', .Generic))
+      stop("explicitly convert ordinary units operands with mixed_units()")
+    }
+    return(.Ops.mixed_units(e1, e2, .Generic))
+  }
   if (missing(e2))
     return(NextMethod())
 

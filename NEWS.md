@@ -1,5 +1,11 @@
 # version devel
 
+* Store `mixed_units` as numeric values with an integer unit index and a
+  dictionary of symbolic units. Conversion and arithmetic operate on groups
+  through ordinary `units` methods. `as.list()` provides scalar units objects;
+  `rep()` now preserves the mixed class. Optional vctrs integration supports
+  dictionary remapping and missing buffers during reshaping.
+
 * Document label parsing in `scale_{type}_units()`; #431
 
 * Add `[<-.mixed_units` method; #432

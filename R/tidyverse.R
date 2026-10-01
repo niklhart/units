@@ -87,6 +87,10 @@ register_all_s3_methods <- function() {
   register_s3_method("vctrs::vec_restore", "units")
   register_s3_method("vctrs::vec_ptype2", "units.units")
   register_s3_method("vctrs::vec_cast", "units.units")
+  for (generic in c("vec_proxy", "vec_proxy_equal", "vec_restore", "vec_ptype"))
+    register_s3_method(paste0("vctrs::", generic), "mixed_units")
+  register_s3_method("vctrs::vec_ptype2", "mixed_units.mixed_units")
+  register_s3_method("vctrs::vec_cast", "mixed_units.mixed_units")
   register_s3_method("ggplot2::scale_type", "units")
   register_s3_method("ggplot2::limits", "units")
 }
@@ -112,3 +116,37 @@ register_s3_method <- function(generic, class, fun=NULL) {
     registerS3method(generic, class, fun, envir=asNamespace(package)))
 }
 # nocov end
+
+# Mixed vectors carry integer codes through the proxy. Symbolic metadata lives
+# on the type prototype; factor levels align different dictionary orders.
+vec_proxy.mixed_units <- function(x, ...) {
+  if (is.list(x)) return(unclass(x))
+  unit <- structure(attr(x, "unit_id"),
+    levels = .mixed_keys(attr(x, "unit_dictionary")), class = "factor")
+  value <- .mixed_values(x)
+  names(value) <- names(x)
+  vctrs::new_data_frame(list(value = value, unit = unit))
+}
+vec_proxy_equal.mixed_units <- vec_proxy.mixed_units
+vec_restore.mixed_units <- function(x, to, ...) {
+  if (is.list(to)) return(.as.mixed_units(x))
+  dictionary <- attr(to, "unit_dictionary")
+  pos <- match(levels(x$unit), .mixed_keys(dictionary))
+  stopifnot(!anyNA(pos))
+  .new_mixed(x$value, as.integer(x$unit), dictionary[pos], names(x$value))
+}
+vec_ptype.mixed_units <- function(x, ...) {
+  .new_mixed(double(), integer(), attr(x, "unit_dictionary"), compact = FALSE)
+}
+vec_ptype2.mixed_units.mixed_units <- function(x, y, ...) {
+  dictionary <- c(attr(x, "unit_dictionary"), attr(y, "unit_dictionary"))
+  dictionary <- dictionary[!duplicated(.mixed_keys(dictionary))]
+  .new_mixed(double(), integer(), dictionary, compact = FALSE)
+}
+vec_cast.mixed_units.mixed_units <- function(x, to, ...) {
+  dictionary <- attr(to, "unit_dictionary")
+  id <- match(.mixed_keys(attr(x, "unit_dictionary")), .mixed_keys(dictionary))[attr(x, "unit_id")]
+  if (any(!is.na(attr(x, "unit_id")) & is.na(id)))
+    stop("Target unit dictionary does not contain all source units.")
+  .new_mixed(.mixed_values(x), id, dictionary, names(x), compact = FALSE)
+}

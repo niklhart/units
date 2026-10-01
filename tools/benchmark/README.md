@@ -37,37 +37,96 @@ replacement, coercion and error cases. It normalizes storage and errors (error
 wording and warning text are not checked). Broader API regression tests live in
 `tests/testthat/test_mixed_dictionary.R`.
 
-Reproduce from the repository root (bench and lobstr must be installed in the
-shared dependency library):
+To reproduce the comparison, install the baseline and the current working tree
+into separate R package libraries. An R library is simply a directory containing
+installed packages; using two directories lets each run load the intended version
+of `units`. Both runs use the same R installation and dependencies.
+
+The commands below assume that R can build `units` on your machine, including
+its udunits-2 system dependency, and that the R packages `Rcpp`, `bench`, and
+`lobstr` are installed in your usual R library. Run these shell commands from
+the repository root:
 
 ```sh
-Rscript tools/benchmark/mixed.R MAIN_LIBRARY OUTPUT/main SHARED_LIBRARY
-Rscript tools/benchmark/mixed.R REDESIGN_LIBRARY OUTPUT/redesign SHARED_LIBRARY
-Rscript tools/benchmark/mixed-compatibility.R MAIN_LIBRARY OUTPUT/main-compatibility.rds
-Rscript tools/benchmark/mixed-compatibility.R REDESIGN_LIBRARY OUTPUT/redesign-compatibility.rds
+# Create temporary source, package-library and results directories.
+export benchmark_dir="$(mktemp -d)"
+mkdir -p "$benchmark_dir/source-main" "$benchmark_dir/lib-main" \
+  "$benchmark_dir/lib-redesign" "$benchmark_dir/results"
+
+# Install the exact baseline used above, without changing the working tree.
+git archive a823fef46d92ee4e1b2e2fa28ddf4c19d67cefb6 | \
+  tar -x -C "$benchmark_dir/source-main"
+R CMD INSTALL --library="$benchmark_dir/lib-main" "$benchmark_dir/source-main"
+
+# Install the redesign, including any uncommitted changes.
+R CMD INSTALL --library="$benchmark_dir/lib-redesign" .
+
+# Run each version in a separate R session, one after the other.
+Rscript tools/benchmark/mixed.R \
+  "$benchmark_dir/lib-main" "$benchmark_dir/results/main"
+Rscript tools/benchmark/mixed.R \
+  "$benchmark_dir/lib-redesign" "$benchmark_dir/results/redesign"
+
+# Compare public behavior separately from the timed workloads.
+Rscript tools/benchmark/mixed-compatibility.R \
+  "$benchmark_dir/lib-main" "$benchmark_dir/results/main-compatibility.rds"
+Rscript tools/benchmark/mixed-compatibility.R \
+  "$benchmark_dir/lib-redesign" "$benchmark_dir/results/redesign-compatibility.rds"
 ```
 
-Compare the paired `*-checks.rds` and `*-compatibility.rds` files with
-`identical(readRDS(...), readRDS(...))`. Raw results and session information are
-in `mixed-results/`.
+Each script's first argument selects the library containing `units`. The second
+is an output filename prefix for the benchmark, or an output filename for the
+compatibility checks. The benchmark also accepts an optional third argument: a
+library containing `bench`, `lobstr`, and their dependencies, if these are not
+installed in your usual R library. It is unnecessary in the example above.
 
-The implementation stores doubles with an integer `unit_id` attribute and a
-`unit_dictionary` of symbolic units. Construction processes distinct labels;
-conversion groups source/target unit pairs and delegates actual values to the
-unchanged `set_units.units` method. Arithmetic similarly delegates observed
-operand-unit pairs to ordinary `units` vectors.
+The benchmark writes timings and retained sizes as CSV files, checked values as
+RDS files, and R/package versions as text. To verify that both versions returned
+the same results, run this in the same shell after the commands above:
 
-Optional vctrs integration carries unit IDs as factor codes. Empty subsets
-remove unused dictionary entries, while type prototypes and nonempty buffers
-with entirely unknown units retain their dictionaries for subsequent assignment.
-Casts reject known units absent from the target dictionary. Regression coverage
-includes reordered dictionaries, known-unit missing values, sparse pivots,
-missing output columns, and names during slicing and assignment.
+```sh
+Rscript -e '
+  results <- file.path(Sys.getenv("benchmark_dir"), "results")
+  for (suffix in c("checks", "compatibility")) {
+    baseline <- readRDS(file.path(results, paste0("main-", suffix, ".rds")))
+    redesign <- readRDS(file.path(results, paste0("redesign-", suffix, ".rds")))
+    stopifnot(identical(baseline, redesign))
+  }
+  cat("Both result comparisons passed. Results are in", results, "\n")
+'
+```
 
-Numeric storage changes direct iteration, storage inspection and serialization.
-Use `as.list()` when scalar `units` objects are needed. Irregular objects created
-by permissive list assignment retain a legacy list representation and do not
-receive the dictionary representation's performance benefits.
+The recorded results behind the table above are in `mixed-results/`.
+
+The redesign stores numeric values alongside integer references to a dictionary
+of units. Conversion and arithmetic collect values with the same unit pair and
+process them together using the existing methods for ordinary `units` vectors.
+The conversion method `set_units.units` is unchanged.
+
+Optional vctrs integration keeps those references aligned during slicing,
+combining and reshaping. Empty subsets discard unused units, but empty type
+prototypes and buffers awaiting assignment retain the unit information needed
+to fill them. Regression tests cover different dictionary orders, missing values
+with known or unknown units, sparse pivots, and preservation of element names.
+
+There is a compatibility exception to numeric storage. The old list-based
+implementation allowed assignment of elements that are not scalar `units`
+objects, such as a bare number:
+
+```r
+x <- mixed_units(c(1, 2), c("m", "s"))
+x[[1]] <- 3
+```
+
+Here the first element is the plain number `3`, with no unit attached; the second
+still has unit `s`. The redesign continues to accept this assignment. Since the
+dictionary representation cannot express an arbitrary list element, the entire
+object switches back to a list while retaining its `mixed_units` class. This
+preserves the assigned contents without inventing a unit for `3` or introducing
+a new assignment error. Such objects do not receive the dictionary storage or
+grouped-arithmetic benefits measured above. Assigning a scalar `units` object,
+such as `x[[1]] <- set_units(3, m)`, allows dictionary storage again when all
+elements are suitable.
 
 Validation ran the full test suite with `NOT_CRAN=true`, including plotting and
 pillar snapshots. Package checks used `--no-manual --no-build-vignettes` and

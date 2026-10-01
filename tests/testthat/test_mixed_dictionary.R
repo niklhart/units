@@ -144,3 +144,42 @@ test_that("vctrs slicing and assignment preserve element names", {
   expect_identical(names(vctrs::vec_assign(x, 1, x[2])), c("a", "b"))
   expect_identical(names(vctrs::vec_c(x, x)), rep(c("a", "b"), 2))
 })
+
+test_that("bare scalar [[ replacement creates dimensionless units", {
+  original <- mixed_units(c(a = 1, b = 2), c("m", "s"))
+  for (value in list(3, 3L, NA_real_, NA, NaN, Inf)) {
+    x <- original
+    expected <- original
+    x[[1]] <- value
+    expected[[1]] <- set_units(value, 1)
+    expect_identical(x, expected)
+    expect_identical(x[[1]], set_units(value, 1))
+    expect_type(x, "double")
+    expect_identical(names(x), c("a", "b"))
+    expect_identical(x[[2]], original[[2]])
+  }
+  x <- original
+  x[["a"]] <- 3
+  expect_identical(x[["a"]], set_units(3, 1))
+  x[[4]] <- 5
+  expect_null(x[[3]])
+  expect_identical(x[[4]], set_units(5, 1))
+  x[[1]] <- set_units(6, kg)
+  expect_identical(x[[1]], set_units(6, kg))
+  x[[1]] <- NULL
+  expect_length(x, 3)
+  expect_identical(x[[1]], original[[2]])
+})
+
+test_that("[[ replacement rejects invalid elements without changing the object", {
+  original <- mixed_units(c(a = 1, b = 2), c("m", "s"))
+  for (value in list("text", NA_character_, TRUE, factor("m"), list(3),
+                    numeric(), 1:2, set_units(1:2, m), 1 + 2i, matrix(3))) {
+    x <- original
+    expect_error(x[[1]] <- value, "replacement must be")
+    expect_identical(x, original)
+  }
+  x <- original
+  expect_error(x[["a"]] <- "text", "replacement must be")
+  expect_identical(x, original)
+})

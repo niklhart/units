@@ -48,6 +48,10 @@
 #' a missing element with unknown units. Use \code{as.list()} to materialize
 #' the former list representation. Direct inspection of storage and iteration
 #' with \code{for} no longer expose scalar units objects.
+#' Assigning a bare numeric scalar with \code{[[<-} creates a dimensionless
+#' \code{units} element, equivalent to assigning \code{set_units(value, 1)}.
+#' Other replacements must be numeric \code{units} scalars, or \code{NULL}
+#' to delete an element; invalid replacements raise an error.
 #' @examples
 #' a <- 1:4
 #' u <- c("m/s", "km/h", "mg/L", "g")
@@ -151,6 +155,14 @@ as.character.mixed_units <- function(x, ...) as.character(as.list(x))
 
 #' @export
 `[[<-.mixed_units` <- function(x, ..., value) {
+  if (length(value) == 1L && !is.object(value) && is.null(dim(value)) &&
+      !is.complex(value) &&
+      (is.numeric(value) || (is.logical(value) && is.na(value))))
+    value <- set_units(value, "1", mode = "standard")
+  if (!is.null(value) &&
+      (!inherits(value, "units") || length(value) != 1L ||
+       !is.numeric(value) || is.complex(value) || !is.null(dim(value))))
+    stop("replacement must be a numeric scalar, a units scalar, or NULL", call. = FALSE)
   out <- as.list(x)
   out[[...]] <- value
   .as.mixed_units(out)

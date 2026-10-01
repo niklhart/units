@@ -29,6 +29,10 @@ with \code{[[} returns an ordinary \code{units} object, or \code{NULL} for
 a missing element with unknown units. Use \code{as.list()} to materialize
 the former list representation. Direct inspection of storage and iteration
 with \code{for} no longer expose scalar units objects.
+Assigning a bare numeric scalar with \code{[[<-} creates a dimensionless
+\code{units} element, equivalent to assigning \code{set_units(value, 1)}.
+Other replacements must be numeric \code{units} scalars, or \code{NULL}
+to delete an element; invalid replacements raise an error.
 }
 \examples{
 a <- 1:4

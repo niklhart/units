@@ -109,24 +109,22 @@ prototypes and buffers awaiting assignment retain the unit information needed
 to fill them. Regression tests cover different dictionary orders, missing values
 with known or unknown units, sparse pivots, and preservation of element names.
 
-There is a compatibility exception to numeric storage. The old list-based
-implementation allowed assignment of elements that are not scalar `units`
-objects, such as a bare number:
+Assigning a bare numeric scalar with `[[<-` now gives it a dimensionless unit:
 
 ```r
 x <- mixed_units(c(1, 2), c("m", "s"))
-x[[1]] <- 3
+x[[1]] <- 3  # equivalent to x[[1]] <- set_units(3, 1)
 ```
 
-Here the first element is the plain number `3`, with no unit attached; the second
-still has unit `s`. The redesign continues to accept this assignment. Since the
-dictionary representation cannot express an arbitrary list element, the entire
-object switches back to a list while retaining its `mixed_units` class. This
-preserves the assigned contents without inventing a unit for `3` or introducing
-a new assignment error. Such objects do not receive the dictionary storage or
-grouped-arithmetic benefits measured above. Assigning a scalar `units` object,
-such as `x[[1]] <- set_units(3, m)`, allows dictionary storage again when all
-elements are suitable.
+The object keeps dictionary storage, and `x[[1]]` returns an ordinary `units`
+scalar. This deliberately changes the old behavior, which left the bare number
+inside the underlying list. Like class-preserving `rep()`, this correction is
+covered by regression tests rather than required to match the baseline.
+
+Invalid scalar replacements, such as `x[[1]] <- "text"`, now raise an error.
+`[[<-` accepts a bare numeric scalar (including missing values), a numeric
+`units` scalar, or `NULL` to delete an element. It no longer accepts arbitrary
+list contents that would leave an invalid `mixed_units` object.
 
 Validation ran the full test suite with `NOT_CRAN=true`, including plotting and
 pillar snapshots. Package checks used `--no-manual --no-build-vignettes` and

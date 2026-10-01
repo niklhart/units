@@ -141,7 +141,6 @@ test_that("numeric storage does not silently enable dimension-blind generics", {
   x <- mixed_units(c(1, NA), c("m", "s"))
   expect_error(sum(x))
   expect_error(sqrt(x))
-  expect_warning(expect_true(is.na(mean(x))))
   expect_identical(as.vector(x), c(1, NA_real_))
   expect_identical(as.vector(x, "double"), c(1, NA_real_))
   expect_identical(is.na(x[c(1, 2, NA)]), c(FALSE, TRUE, TRUE))
@@ -329,6 +328,10 @@ test_that("removed convenience methods use ordinary numeric defaults", {
   expect_identical(is.na(x), is.na(values))
   expect_identical(lengths(x), lengths(values))
   expect_identical(as.vector(x), as.vector(values))
+  expect_identical(as.character(x), as.character(values))
+  expect_identical(mean(x), mean(values))
+  expect_identical(mean(x, na.rm = TRUE), mean(values, na.rm = TRUE))
+  expect_identical(mean(mixed_units(c(1, 2), c("m", "s"))), 1.5)
   for (n in c(0L, 2L, 4L)) {
     result <- x
     length(result) <- n
@@ -342,6 +345,6 @@ test_that("removed convenience methods use ordinary numeric defaults", {
     expect_error(x$a <- value, "not supported")
     expect_identical(x, original)
   }
-  for (generic in c("$", "median", "lengths", "as.vector", "is.na", "length<-"))
+  for (generic in c("$", "median", "mean", "lengths", "as.vector", "as.character", "is.na", "length<-"))
     expect_null(getS3method(generic, "mixed_units", optional = TRUE))
 })

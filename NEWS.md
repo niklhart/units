@@ -9,8 +9,8 @@
   replacement and concatenation create dimensionless elements, and invalid
   inputs raise an error. Arithmetic with unknown units propagates missing
   values and unknown IDs. `$` access and `$<-` replacement are unsupported.
-  `is.na()`, `lengths()` and `as.vector()` use the numeric defaults; there is
-  no custom resizing method.
+  `is.na()`, `lengths()`, `as.vector()`, `as.character()` and `mean()` use the
+  numeric defaults; there is no custom resizing method.
 
 * Document label parsing in `scale_{type}_units()`; #431
 

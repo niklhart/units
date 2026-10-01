@@ -11,7 +11,7 @@ normalize <- function(x) {
  x
 }
 cases <- alist(x, x[c(4,1,NA,9)], x[FALSE], x['absent'], x[[2]], x[['absent']],
- units(x), drop_units(x), format(x), as.character(x), as.numeric(x),
+ units(x), drop_units(x), format(x), as.numeric(x),
  c(x,y), c(a=x,b=y), c(x,NULL), unique(x), duplicated(x),
  set_units(x,c('cm','min')), set_units(x,'m'), set_units(x[FALSE],character()),
  set_units(x[1:2],c('cm','s','cm')), set_units(x[1],NA_character_),

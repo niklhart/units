@@ -34,8 +34,9 @@ Replacements must be numeric, \code{units}, or \code{mixed_units} values;
 \code{[[<-} requires a scalar. Assigning \code{NULL} deletes elements.
 Invalid inputs raise an error rather than changing representation.
 \code{$} and \code{$<-} are unsupported; use named indexing with \code{[[}
-or \code{[}. The \code{is.na}, \code{lengths} and \code{as.vector}
-functions use the standard numeric behavior.
+or \code{[}. The \code{is.na}, \code{lengths}, \code{as.vector},
+\code{as.character} and \code{mean} functions use the standard numeric
+behavior; \code{mean} averages stored values without converting units.
 Arithmetic involving an unknown unit returns a missing value
 with an unknown unit; a missing value with a known unit retains its unit.
 All mixed results use numeric storage, integer IDs and a unit dictionary.

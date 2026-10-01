@@ -69,8 +69,9 @@
 #' \code{[[<-} requires a scalar. Assigning \code{NULL} deletes elements.
 #' Invalid inputs raise an error rather than changing representation.
 #' \code{$} and \code{$<-} are unsupported; use named indexing with \code{[[}
-#' or \code{[}. The \code{is.na}, \code{lengths} and \code{as.vector}
-#' functions use the standard numeric behavior.
+#' or \code{[}. The \code{is.na}, \code{lengths}, \code{as.vector},
+#' \code{as.character} and \code{mean} functions use the standard numeric
+#' behavior; \code{mean} averages stored values without converting units.
 #' Arithmetic involving an unknown unit returns a missing value
 #' with an unknown unit; a missing value with a known unit retains its unit.
 #' All mixed results use numeric storage, integer IDs and a unit dictionary.
@@ -127,14 +128,6 @@ as.double.mixed_units <- function(x, ...) {
   if (anyNA(attr(x, "unit_id")))
     stop("cannot coerce elements with unknown units to numeric", call. = FALSE)
   .mixed_values(x)
-}
-
-#' @export
-as.character.mixed_units <- function(x, ...) {
-  out <- as.character(.mixed_values(x))
-  out[is.na(out)] <- "NA"
-  out[is.na(attr(x, "unit_id"))] <- "NULL"
-  out
 }
 
 #' @export
@@ -421,11 +414,6 @@ Math.mixed_units <- function(x, ...) stop(paste("operation", .Generic, "not supp
 #' @export
 Summary.mixed_units <- function(..., na.rm = FALSE) {
   stop(paste("operation", .Generic, "not supported"), call. = FALSE)
-}
-#' @export
-mean.mixed_units <- function(x, ...) {
-  warning("argument is not numeric or logical: returning NA")
-  NA_real_
 }
 #' @export
 xtfrm.mixed_units <- function(x) {
